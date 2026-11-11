@@ -26,7 +26,22 @@ class DemoAuthRepository implements AuthRepository {
   bool get isDemo => true;
 
   @override
-  Stream<AuthStatus> get authState => _controller.stream;
+  Stream<AuthStatus> get authState => Stream<AuthStatus>.multi((controller) {
+    // Jedes neue Abo erhält sofort den aktuellen Zustand (Replay),
+    // danach alle Änderungen. So geht keine Emission verloren — egal
+    // wann die UI sich anschaut.
+    controller.add(_current());
+    final sub = _controller.stream.listen(
+      controller.add,
+      onDone: controller.close,
+    );
+    controller.onCancel = () {
+      sub.cancel();
+    };
+  });
+
+  AuthStatus _current() =>
+      _user == null ? const AuthAnonymous() : Authenticated(_user!);
 
   @override
   Future<void> signIn({required String email, required String password}) async {
