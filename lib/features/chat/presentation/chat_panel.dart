@@ -16,19 +16,16 @@ class _ChatMsg {
   final DateTime time;
 }
 
-/// Coach-Chat als eigene Spalte (Desktop) bzw. Bottom-Sheet (mobil).
+/// Coach-Chat als eigener Tab in der Bottom-Bar (Mobile-First-Layout).
 ///
 /// Antwortet lokal mit kontextbezogenen Hinweisen auf Basis der
 /// aktuell verfügbaren Messreihen des aktiven Bereichs. Klar als
 /// lokale Demo-Antwort gekennzeichnet — ein echter LLM-/Supabase-
 /// Edge-Function-Anschluss ist der nächste Ausbauschritt.
 class ChatPanel extends ConsumerStatefulWidget {
-  const ChatPanel({required this.area, this.inSheet = false, super.key});
+  const ChatPanel({required this.area, super.key});
 
   final HealthArea area;
-
-  /// True, wenn das Panel in einem Bottom-Sheet läuft (Header anders).
-  final bool inSheet;
 
   @override
   ConsumerState<ChatPanel> createState() => _ChatPanelState();
@@ -88,8 +85,19 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     _scrollToBottom();
     setState(() => _busy = true);
 
+    // Sicherstellen, dass die Messreihen des Bereichs geladen sind —
+    // die erste Frage darf nicht vor dem Repository-Antwort eintreffen
+    // (FutureProvider liefert beim ersten Read sonst AsyncLoading).
+    List<MetricSeries>? series;
+    try {
+      series = await ref.read(seriesByAreaProvider(widget.area).future);
+    } catch (_) {
+      series = null;
+    }
+    if (!mounted) return;
+
     // Antwort bauen (mit echten, verfügbaren Daten, falls vorhanden).
-    final reply = _coachReply(text);
+    final reply = _coachReply(text, series);
 
     // Kleine Verzögerung für ein natürliches Gefühl.
     await Future<void>.delayed(const Duration(milliseconds: 350));
@@ -101,14 +109,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     _scrollToBottom();
   }
 
-  String _coachReply(String question) {
-    final AsyncValue<List<MetricSeries>> async_ = ref.read(
-      seriesByAreaProvider(widget.area),
-    );
-    final series = switch (async_) {
-      AsyncData(value: final v) => v,
-      _ => null,
-    };
+  String _coachReply(String question, List<MetricSeries>? series) {
     if (series == null || series.isEmpty) {
       return 'Ich habe gerade keine Messwerte für „${widget.area.label}“ '
           'vor mir. Trage erst Werte ein, dann kann ich Trends sehen.';
@@ -227,42 +228,6 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     final scheme = theme.colorScheme;
     return Column(
       children: [
-        if (widget.inSheet)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            alignment: Alignment.center,
-            child: Row(
-              children: [
-                const Icon(Icons.psychology_outlined, size: 20),
-                const SizedBox(width: 8),
-                Text(
-                  'Coach-Chat: ${widget.area.label}',
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          )
-        else
-          Container(
-            padding: const EdgeInsets.fromLTRB(16, 12, 12, 8),
-            decoration: BoxDecoration(
-              border: Border(bottom: BorderSide(color: theme.dividerColor)),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.psychology_outlined, size: 20),
-                const SizedBox(width: 8),
-                Text(
-                  'Coach-Chat',
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
         Expanded(
           child: _messages.isEmpty
               ? const SizedBox.shrink()

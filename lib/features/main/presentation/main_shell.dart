@@ -10,26 +10,42 @@ import '../../chat/presentation/chat_panel.dart';
 import '../../dashboard/presentation/dashboard_screen.dart';
 import '../../navigation/area_icon.dart';
 
-/// Haupt-Hülle der App (nach Login):
+/// Haupt-Hülle der App (nach Login) — **Mobile First**:
 ///
-/// - **Desktop (≥900 px):** NavigationRail (80 px) | Dashboard (~580) |
-///   Chat-Spalte (340 px) — das 80/20-Layout.
-/// - **Mobil:** NavigationBar unten, Chat als Bottom-Sheet über FAB.
+/// - **Bottom-Bar mit 4 Tabs:** Gesundheit / Fitness / Psychologie + **Coach**.
+/// - **Coach-Chat unten im Tab-Bereich:** Der Chat ist ein eigener Tab und
+///   ersetzt dabei das Dashboard — kein Seiten-Layout, kein FAB, kein Sheet.
+/// - Kein Desktop-Sidebar-Layout: Das Smartphone-Layout skaliert unverändert
+///   auf größere Bildschirme (dort einfach breiter nutzbar).
 class MainShell extends ConsumerStatefulWidget {
   const MainShell({super.key});
 
-  static const double _chatBreakpoint = 900;
-  static const double _chatWidth = 340;
+  /// Index des Coach-Tabs in der Bottom-Bar (nach den drei Health-Areas).
+  static const int chatTab = 3;
 
   @override
   ConsumerState<MainShell> createState() => _MainShellState();
 }
 
 class _MainShellState extends ConsumerState<MainShell> {
+  /// Aktiver Tab: 0..2 = Health-Areas, [MainShell.chatTab] = Coach-Chat.
+  int _tabIndex = 0;
+
+  /// Zuletzt gewählte Health-Area — bleibt als Chat-Kontext erhalten,
+  /// wenn der User den Coach-Tabs wechselt und wieder zurückkommt.
   int _areaIndex = 0;
+
   bool _editing = false;
 
+  bool get _isChat => _tabIndex == MainShell.chatTab;
   HealthArea get _area => HealthArea.values[_areaIndex];
+
+  void _selectTab(int i) {
+    setState(() {
+      _tabIndex = i;
+      if (i != MainShell.chatTab) _areaIndex = i;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -38,125 +54,89 @@ class _MainShellState extends ConsumerState<MainShell> {
     final isDemo =
         auth is Authenticated && ref.watch(authRepositoryProvider).isDemo;
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final wide = constraints.maxWidth >= MainShell._chatBreakpoint;
-        return Scaffold(
-          appBar: AppBar(
-            titleSpacing: 8,
-            title: Row(
-              children: [
-                iconForArea(_area),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _area.label,
-                        style: theme.textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w700,
+    return Scaffold(
+      appBar: AppBar(
+        titleSpacing: 8,
+        title: _isChat
+            ? const Row(
+                children: [
+                  Icon(Icons.forum_outlined),
+                  SizedBox(width: 10),
+                  Text('Coach-Chat'),
+                ],
+              )
+            : Row(
+                children: [
+                  iconForArea(_area),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _area.label,
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
-                      ),
-                      Text(
-                        _area.description,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.outline,
+                        Text(
+                          _area.description,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.outline,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              if (isDemo)
-                const Padding(
-                  padding: EdgeInsets.only(right: 8),
-                  child: Chip(
-                    label: Text('Demo-Daten', style: TextStyle(fontSize: 11)),
-                    visualDensity: VisualDensity.compact,
-                  ),
-                ),
-              IconButton(
-                tooltip: 'Layout bearbeiten',
-                icon: Icon(
-                  _editing ? Icons.check : Icons.dashboard_customize_outlined,
-                ),
-                color: _editing ? theme.colorScheme.primary : null,
-                onPressed: () => setState(() => _editing = !_editing),
-              ),
-              IconButton(
-                tooltip: 'Darstellung wechseln',
-                icon: Icon(
-                  ref.watch(darkModeProvider)
-                      ? Icons.light_mode_outlined
-                      : Icons.dark_mode_outlined,
-                ),
-                onPressed: () => setDarkMode(ref, !ref.read(darkModeProvider)),
-              ),
-              _UserMenu(auth: auth),
-            ],
-          ),
-          body: Row(
-            children: [
-              if (wide)
-                NavigationRail(
-                  selectedIndex: _areaIndex,
-                  onDestinationSelected: (i) => setState(() => _areaIndex = i),
-                  labelType: NavigationRailLabelType.all,
-                  destinations: [
-                    for (final area in HealthArea.values)
-                      NavigationRailDestination(
-                        icon: iconForArea(area),
-                        label: Text(area.label),
-                      ),
-                  ],
-                ),
-              Expanded(
-                child: DashboardScreen(area: _area, editing: _editing),
-              ),
-              if (wide) ...[
-                const VerticalDivider(width: 1),
-                SizedBox(
-                  width: MainShell._chatWidth,
-                  child: ChatPanel(area: _area),
-                ),
-              ],
-            ],
-          ),
-          bottomNavigationBar: !wide
-              ? NavigationBar(
-                  selectedIndex: _areaIndex,
-                  onDestinationSelected: (i) => setState(() => _areaIndex = i),
-                  destinations: [
-                    for (final area in HealthArea.values)
-                      NavigationDestination(
-                        icon: iconForArea(area),
-                        label: area.label,
-                      ),
-                  ],
-                )
-              : null,
-          floatingActionButton: !wide
-              ? FloatingActionButton(
-                  tooltip: 'Coach-Chat',
-                  onPressed: () => showModalBottomSheet(
-                    context: context,
-                    isScrollControlled: true,
-                    useSafeArea: true,
-                    builder: (ctx) => SizedBox(
-                      height: MediaQuery.of(ctx).size.height * 0.75,
-                      child: ChatPanel(area: _area, inSheet: true),
+                      ],
                     ),
                   ),
-                  child: const Icon(Icons.chat_bubble_outline),
-                )
-              : null,
-        );
-      },
+                ],
+              ),
+        actions: [
+          if (isDemo)
+            const Padding(
+              padding: EdgeInsets.only(right: 8),
+              child: Chip(
+                label: Text('Demo-Daten', style: TextStyle(fontSize: 11)),
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
+          if (!_isChat)
+            IconButton(
+              tooltip: 'Layout bearbeiten',
+              icon: Icon(
+                _editing ? Icons.check : Icons.dashboard_customize_outlined,
+              ),
+              color: _editing ? theme.colorScheme.primary : null,
+              onPressed: () => setState(() => _editing = !_editing),
+            ),
+          IconButton(
+            tooltip: 'Darstellung wechseln',
+            icon: Icon(
+              ref.watch(darkModeProvider)
+                  ? Icons.light_mode_outlined
+                  : Icons.dark_mode_outlined,
+            ),
+            onPressed: () => setDarkMode(ref, !ref.read(darkModeProvider)),
+          ),
+          _UserMenu(auth: auth),
+        ],
+      ),
+      body: _isChat
+          ? ChatPanel(area: _area)
+          : DashboardScreen(area: _area, editing: _editing),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _tabIndex,
+        onDestinationSelected: _selectTab,
+        destinations: [
+          for (final area in HealthArea.values)
+            NavigationDestination(icon: iconForArea(area), label: area.label),
+          const NavigationDestination(
+            icon: Icon(Icons.forum_outlined),
+            label: 'Coach',
+          ),
+        ],
+      ),
     );
   }
 }
